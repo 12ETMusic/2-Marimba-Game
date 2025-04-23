@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Marimba Game</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; background-color: black; color: white; }
+        .note-container { display: flex; overflow-x: auto; margin-top: 20px; justify-content: center; }
+        .note { font-size: 24px; width: 60px; height: 180px; text-align: center; line-height: 180px; border-radius: 8px; cursor: pointer; margin: 5px; }
+        .video-container { margin-top: 20px; }
+        .recording-status { color: red; font-size: 20px; display: none; }
+        .recorded-clip-list { margin-top: 20px; text-align: center; }
+    </style>
+</head>
+<body>
+    <h1>Marimba Game</h1>
+    <div class="note-container" id="marimba"></div>
+
+    <button onclick="toggleVideo()">🎬 Speel Ode an die Freude</button>
+    <button onclick="startRecording()" id="startButton">🎤 Start Opname</button>
+    <button onclick="stopRecording()" id="stopButton" disabled>🛑 Stop Opname</button>
+    <div class="recording-status" id="recordingStatus">⏺ Opname bezig...</div>
+
+    <div class="video-container" id="videoContainer" style="display:none;">
+        <iframe id="videoPlayer" width="560" height="315" 
+            src="https://www.youtube.com/embed/CWCz0LrbbkQ?enablejsapi=1" 
+            frameborder="0" allowfullscreen></iframe>
+    </div>
+
+    <div class="recorded-clip-list" id="recordedClips">
+        <h3>Opnames</h3>
+    </div>
+
+    <script>
+        const noteColors = {
+            "c4": "red", "d4": "orange", "e4": "yellow", "f4": "lightgreen", "fis4": "green",
+            "g4": "darkgreen", "a4": "purple", "bes4": "pink", "b4": "deeppink",
+            "c5": "red", "d5": "orange", "e5": "yellow", "f5": "lightgreen", "fis5": "green",
+            "g5": "darkgreen", "a5": "purple", "bes5": "pink", "b5": "deeppink", "c6": "red"
+        };
+
+        const audioElements = {};
+        Object.keys(noteColors).forEach(note => {
+            const audio = new Audio(`Sounds/${note}.mp3`);
+            audioElements[note] = audio;
+        });
+
+        const marimbaContainer = document.getElementById("marimba");
+        Object.keys(noteColors).forEach(note => {
+            let noteElement = document.createElement("div");
+            noteElement.className = "note";
+            noteElement.style.backgroundColor = noteColors[note];
+            noteElement.textContent = note.toUpperCase();
+            noteElement.addEventListener("click", () => playSound(note));
+            marimbaContainer.appendChild(noteElement);
+        });
+
+        function playSound(note) {
+            if (audioElements[note]) {
+                audioElements[note].currentTime = 0;
+                audioElements[note].play();
+            }
+        }
+
+        function toggleVideo() {
+            const videoContainer = document.getElementById("videoContainer");
+            videoContainer.style.display = videoContainer.style.display === "none" ? "block" : "none";
+        }
+
+        let mediaRecorder;
+        let recordedChunks = [];
+        let audioContext;
+        let marimbaAudioSource;
+        let videoElement = document.getElementById("videoPlayer");
+
+        async function startRecording() {
+            try {
+                // Vraag expliciet toegang tot zowel de microfoon als systeemgeluid
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+
+                // Maak een nieuwe audio context aan
+                audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                const gainNode = audioContext.createGain();
+
+                // Audio instellen voor Marimba geluid
+                const marimbaAudio = new Audio();
+                marimbaAudio.loop = true;
+                marimbaAudio.src = `Sounds/${Object.keys(noteColors)[0]}.mp3`;  // Laad het eerste geluid als voorbeeld
+                marimbaAudio.load();
+                
+                marimbaAudioSource = audioContext.createMediaElementSource(marimbaAudio);
+                marimbaAudioSource.connect(gainNode);
+                gainNode.connect(audioContext.destination);
+
+                // Audio van de YouTube-video instellen
+                const videoAudioNode = audioContext.createMediaElementSource(videoElement);
+                videoAudioNode.connect(gainNode);  // Combineer de YouTube audio met Marimba-geluiden
+
+                // Start opnemen met de microfoonstream
+                mediaRecorder = new MediaRecorder(stream);
+                recordedChunks = [];
+
+                mediaRecorder.ondataavailable = (event) => {
+                    if (event.data.size > 0) {
+                        recordedChunks.push(event.data);
+                    }
+                };
+
+                mediaRecorder.start();
+                document.getElementById("recordingStatus").style.display = "block";
+                document.getElementById("startButton").disabled = true;
+                document.getElementById("stopButton").disabled = false;
+
+            } catch (err) {
+                alert("❌ Je browser blokkeert opname. Zorg ervoor dat je microfoon-toestemming hebt en je site via HTTPS draait.");
+                console.error("Fout bij het starten van opname:", err);
+            }
+        }
+
+        function stopRecording() {
+            if (mediaRecorder && mediaRecorder.state === "recording") {
+                mediaRecorder.stop();
+                document.getElementById("recordingStatus").style.display = "none";
+                document.getElementById("startButton").disabled = false;
+                document.getElementById("stopButton").disabled = true;
+
+                mediaRecorder.onstop = () => {
+                    const recordedBlob = new Blob(recordedChunks, { type: 'audio/webm' });
+                    displayRecording(recordedBlob);
+                };
+            }
+        }
+
+        function displayRecording(blob) {
+            const url = URL.createObjectURL(blob);
+            const recordedClipDiv = document.createElement("div");
+
+            const audioPlayer = document.createElement("audio");
+            audioPlayer.controls = true;
+            audioPlayer.src = url;
+
+            recordedClipDiv.appendChild(audioPlayer);
+            document.getElementById("recordedClips").appendChild(recordedClipDiv);
+        }
+    </script>
+</body>
+</html>
+
